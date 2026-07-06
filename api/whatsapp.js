@@ -1,45 +1,29 @@
 export default async function handler(req, res) {
   try {
-    const { phone, message, leadId } = req.body;
-    if (!phone || !message) return res.status(400).json({ error: 'Phone and message required' });
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-    const instanceId = process.env.ULTRAMSG_INSTANCE_ID;
-    const token = process.env.ULTRAMSG_TOKEN;
-
-    if (!instanceId || !token) {
-      return res.status(400).json({ error: 'ULTRAMSG_INSTANCE_ID and ULTRAMSG_TOKEN required in .env' });
+    var body = req.body;
+    if (!body.phone || !body.message) {
+      return res.status(400).json({ error: 'phone and message required' });
     }
 
-    // UltraMsg API — sends from YOUR number (+91 81888 42829)
-    const url = `https://api.ultramsg.com/${instanceId}/messages/chat`;
+    var iid = process.env.ULTRAMSG_INSTANCE_ID;
+    var tok = process.env.ULTRAMSG_TOKEN;
 
-    const resp = await fetch(url, {
+    if (!iid || !tok) {
+      return res.json({ error: 'ULTRAMSG not configured. Set ULTRAMSG_INSTANCE_ID and ULTRAMSG_TOKEN in Vercel env.', sent: false });
+    }
+
+    var phoneClean = body.phone.replace(/[^0-9]/g, '');
+    var resp = await fetch('https://api.ultramsg.com/' + iid + '/messages/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        token: token,
-        to: phone.replace(/[^0-9]/g, ''),
-        body: message
-      })
+      body: 'token=' + tok + '&to=' + phoneClean + '&body=' + encodeURIComponent(body.message)
     });
 
-    const data = await resp.json();
-
-    // Log message
-    if (data.sent === 'true' || data.status === 'success') {
-      const { kv } = await import('@vercel/kv');
-      if (leadId) {
-        await kv.rpush('convo:' + leadId, JSON.stringify({
-          who: 'agent', text: message, time: Date.now()
-        }));
-      }
-      await kv.rpush('feed', JSON.stringify({
-        type: 'msg', text: `WhatsApp sent to ${phone}`, time: Date.now()
-      }));
-    }
-
+    var data = await resp.json();
     return res.json(data);
   } catch (e) {
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: e.message, sent: false });
   }
 }
